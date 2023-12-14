@@ -6,9 +6,9 @@ import telegram.ext
 from telegram import Update, _user
 from telegram.ext import ContextTypes
 
-import keyboards as kb
+from app import keyboards as kb
 from app.translation import translate
-from models import User, Conversation, ConversationThrough, Message, Token
+from app.models import User, Conversation, ConversationThrough, Message, Token
 
 
 def generate_token(length=48):
@@ -72,8 +72,10 @@ def get_user(tg: int | Update, return_tg_data=False) -> User | _user.User:
 
     else:
         user = User.get_or_none(id=tg)
-    if isinstance(user, User):
-        print("USER: %s" % get_line_number())
+
+    # # To print where database is involved
+    # if isinstance(user, User):
+    #     print("USER: %s" % get_line_number())
     return user
 
 

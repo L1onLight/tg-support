@@ -1,15 +1,18 @@
 import logging
+import os
 import re
 import sys
-from utils import (
+from datetime import datetime
+
+from app.utils import (
     generate_token, get_user, get_pages, check_callback_data, clear_context, paginate_closed_conversations,
     paginate_joined_conversations, paginate_active_conversations, paginate_tokens, paginate_inspect, paginate_agent_list
 )
-import keyboards as kb
-from models import db, User, FutureAgent, Token, Conversation, Message
+import app.keyboards as kb
+from app.models import db, User, FutureAgent, Token, Conversation, Message
 import telegram
 
-from config import TOKEN
+from app.config import TOKEN
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -19,12 +22,12 @@ from telegram.ext import (
     filters,
     CallbackQueryHandler, ConversationHandler
 )
-from translation import translate
+from app.translation import translate
 
 
 class SupportBot:
     def __init__(self, db_handler, token, logger=True):
-        self.db = db_handler
+        self.db: db = db_handler
 
         self.app = Application.builder().token(token).build()
         self.app.add_handler(CommandHandler("start", self.start))
@@ -55,7 +58,7 @@ class SupportBot:
         if conv:
             conv.is_closed = True
             conv.save()
-            db.logged_commit()
+            self.db.logged_commit()
             del context.user_data["conversation_context"]
             await update.message.get_bot().send_message(text=translate("conv_closed_2", lang),
                                                         chat_id=conv.customer_chat)
@@ -63,17 +66,26 @@ class SupportBot:
 
     @staticmethod
     def logger_setup():
+        logs_dir = os.path.join(os.getcwd(), "logs")
+        if not os.path.exists(logs_dir):
+            os.mkdir(logs_dir)
         logging.basicConfig(
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
         )
         # set higher logging level for httpx to avoid all GET and POST requests being logged
         logging.getLogger("httpx").setLevel(logging.WARNING)
 
-        logger = logging.getLogger(__name__)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] - %(name)s - %(message)s")
+        file_handler = logging.FileHandler("logs/%s.log" % datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+        file_handler.setFormatter(formatter)
+
+        # logging.FileHandler("%s.log" % datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+        logger = logging.getLogger()
+        logger.addHandler(file_handler)
         return logger
 
     async def query(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data=None, ):
-        db.logged_commit()
+        self.db.logged_commit()
         query = update.callback_query
         cd = query.data if query else data
         try:
@@ -241,8 +253,7 @@ class SupportBot:
     def run(self):
         self.app.run_polling()
 
-    @staticmethod
-    def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    def get_lang(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         """
         Retrieves the user's language from the context or the database.
 
@@ -256,7 +267,7 @@ class SupportBot:
         """
         lang = context.user_data.get("lang")
         if not lang:
-            db.logged_commit()
+            self.db.logged_commit()
             user = get_user(update)
             if user:
                 context.user_data["lang"] = user.language
@@ -357,9 +368,7 @@ class SupportBot:
                         self.logger.info("User %s authorized as agent." % found.id)
                     await self.authorized(update, context, is_agent=True)
                     return
-            if found and not found.is_agent and not found.is_admin:
-                await self.unauthorized(update, context)
-                return
+
             kwargs = {
                 "text": translate("choose_auth", lang),
                 "reply_markup": kb.authorization(lang)
@@ -369,10 +378,9 @@ class SupportBot:
             if self.logger:
                 self.logger.error(f"Ab error occurred: {e}")
         finally:
-            db.logged_commit()
+            self.db.logged_commit()
 
     async def handle_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        print("-------------------------------------")
         is_commit = False
         try:
 
@@ -380,7 +388,7 @@ class SupportBot:
             text_reply = update.message.text
             if 'waiting_for_token_reply' in context.user_data:
                 if text_reply == "ADMIN_QWERTY":
-                    db.logged_commit()
+                    self.db.logged_commit()
                     user = get_user(update)
                     user.is_agent = True
                     user.is_admin = True
@@ -391,7 +399,7 @@ class SupportBot:
                     return
                 token = Token.get_or_none(token=text_reply)
                 if token and not token.is_activated:
-                    db.logged_commit()
+                    self.db.logged_commit()
                     user = get_user(update)
                     if not user:
                         await self.start(update, context)
@@ -402,7 +410,8 @@ class SupportBot:
                     token.save()
                     is_commit = True
                     if self.logger:
-                        self.logger.info("Agent permissions added to user %s via token" % user.id)
+                        self.logger.info(
+                            "Agent permissions added to user with ID %s via token with ID %s" % (user.id, token.id))
                     await self.authorized(update, context, is_agent=True)
                     del context.user_data['waiting_for_token_reply']
                     return
@@ -419,7 +428,7 @@ class SupportBot:
                     return
 
             elif context.user_data.get("waiting_for_username_reply"):
-                db.logged_commit()
+                self.db.logged_commit()
                 if len(text_reply) < 5 or "@" not in text_reply:
                     await update.message.reply_text("Wrong username",
                                                     reply_markup=kb.agent_add_try_again(lang))
@@ -466,7 +475,7 @@ class SupportBot:
             elif (context.user_data.get("customer_conversation_context")
                   or (context.user_data.get("customer_conversation_context")
                       and context.user_data.get("conversation_created"))):
-                db.logged_commit()
+                self.db.logged_commit()
                 if context.user_data.get("user_context"):
                     user = context.user_data.get("user_context")
                 else:
@@ -497,7 +506,7 @@ class SupportBot:
 
         finally:
             if is_commit:
-                db.logged_commit()
+                self.db.logged_commit()
 
     async def unauthorized(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = self.get_lang(update, context)
