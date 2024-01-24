@@ -4,7 +4,7 @@ Telegram support bot based on python-telegram-bot and peewee libraries.
 
 ## Installation
 
-Create .env file in the root of project(/realty) where settings.py located and set the variables:
+Create .env file in the root of project where settings.py located and set the variables:
 
 ```properties
 TOKEN=telegram_bot_token
