@@ -4,11 +4,11 @@ Telegram support bot based on python-telegram-bot and peewee libraries.
 
 ## Installation
 
-Create .env file in the root of project where settings.py located and set the variables:
+Create .env file in the root of project where settings.py is located and set the variables:
 
 ```properties
 TOKEN=telegram_bot_token
-IS_TSL=1 # 1(True) or 0(False), probably only for planetscale.com?
+IS_TSL=1 # 1(True) or 0(False), only for planetscale.com
 DB_HOST=db_host
 DB_USERNAME=db_username
 DB_PASSWORD=db_pass
